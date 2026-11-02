@@ -31,8 +31,20 @@ RUN python3 -m pip install \
         torchaudio==2.9.0
 
 WORKDIR /app
-COPY requirements.txt .
-RUN python3 -m pip install --requirement requirements.txt
+COPY requirements.txt requirements-runtime.txt ./
+# chatterbox-tts 0.1.7 pins torch 2.6 on Python 3.10. Install the package
+# without dependency resolution, then install its non-Torch runtime deps so
+# the Blackwell-capable cu128 PyTorch wheel remains authoritative.
+RUN python3 -m pip install --no-deps chatterbox-tts==0.1.7 \
+    && python3 -m pip install --requirement requirements-runtime.txt \
+    && python3 - <<'PYVERIFY'
+import torch, torchaudio
+from chatterbox.tts_turbo import ChatterboxTurboTTS
+assert torch.__version__.startswith('2.9.0'), torch.__version__
+assert torchaudio.__version__.startswith('2.9.0'), torchaudio.__version__
+assert str(torch.version.cuda).startswith('12.8'), torch.version.cuda
+print('verified', torch.__version__, torchaudio.__version__, torch.version.cuda)
+PYVERIFY
 
 # Bake the public model into the image so a scale-to-zero cold start does not
 # have to download model weights.
